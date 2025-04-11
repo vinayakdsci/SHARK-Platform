@@ -1,18 +1,13 @@
-#include <iostream>
-
 #include "mobilenet.h"
 
 int main(int args, const char **argv) {
-  assert(argc == 2 && "Expected VMFB filepath to follow the executable file");
+  assert(argc == 3 &&
+         "Expected VMFB and IRPA filepaths to follow the executable file");
   const char *filepath = argv[1];
+  const char *irpa_path = argv[2];
 
   auto mobileNetDriver = shortfin::cpp::MobileNetImpl();
-  const auto prog_module = mobileNetDriver.loadProgramModule(filepath);
-
-  std::vector<std::string> exports = prog_module.exports();
-  for (auto exp : exports) {
-    std::cerr << exp << "\n";
-  }
+  mobileNetDriver.loadMobileNetProgram(filepath, irpa_path);
 
   return 0;
 }
