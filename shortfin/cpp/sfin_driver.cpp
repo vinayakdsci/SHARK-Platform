@@ -7,7 +7,11 @@ int main(int args, const char **argv) {
   const char *irpa_path = argv[2];
 
   auto mobileNetDriver = shortfin::cpp::MobileNetImpl();
-  mobileNetDriver.loadMobileNetProgram(filepath, irpa_path);
+  int count = 0;
+  while (count < 2000) {
+    mobileNetDriver.loadMobileNetProgram(filepath, irpa_path);
+    count++;
+  }
 
   return 0;
 }
