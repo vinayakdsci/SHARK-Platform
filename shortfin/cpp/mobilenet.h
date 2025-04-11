@@ -15,14 +15,12 @@ class MobileNetImpl {
     system_.reset();
   }
 
-  std::string ReadFile(const char *path);
-  /// Load a module from the given path.
-  local::ProgramModule loadProgramModule(const char *path);
   void loadMobileNetProgram(const char *filepath, const char *param_path);
-
   local::System &system() { return *system_.get(); }
+  local::ScopedDevice &device() { return device_; }
 
  private:
+  local::ProgramModule loadProgramModule(const char *path);
   local::SystemPtr system_;
   std::shared_ptr<local::Fiber> fiber_;
   local::ScopedDevice device_;
