@@ -172,23 +172,24 @@ class SHORTFIN_API storage : public local::ProgramInvocationMarshalable {
     return timeline_resource_->host_allocator();
   }
 
+  // Adds any necessary wait barriers to the invocation on behalf of this
+  // storage.
+  void AddInvocationArgBarrier(local::ProgramInvocation *inv,
+                               local::ProgramResourceBarrier barrier);
+
+  // ProgramInvocationMarshalable implementation.
+  void AddAsInvocationArgument(local::ProgramInvocation *inv,
+                               local::ProgramResourceBarrier barrier) override;
+
  private:
   storage(local::ScopedDevice device, iree::hal_buffer_ptr buffer,
           local::detail::TimelineResource::Ref timeline_resource);
   void AsyncDeallocate();
-  // ProgramInvocationMarshalable implementation.
-  void AddAsInvocationArgument(local::ProgramInvocation *inv,
-                               local::ProgramResourceBarrier barrier) override;
   static storage CreateFromInvocationResultRef(
       local::ProgramInvocation *inv,
       local::CoarseInvocationTimelineImporter *timeline_importer,
       iree::vm_opaque_ref ref);
   static iree_vm_ref_type_t invocation_marshalable_type();
-
-  // Adds any necessary wait barriers to the invocation on behalf of this
-  // storage.
-  void AddInvocationArgBarrier(local::ProgramInvocation *inv,
-                               local::ProgramResourceBarrier barrier);
 
   // Imports a raw hal buffer from an invocation as a storage, attaching any
   // needed barriers.
