@@ -11,7 +11,7 @@ std::vector<float> readImageBinary(std::filesystem::path path) {
     exit(1);
   }
   std::vector<float> raw_bin_data;
-  uint32_t val;
+  float val;
   while (in.read(reinterpret_cast<char *>(&val), sizeof(val))) {
     raw_bin_data.push_back(static_cast<float>(val));
   }
@@ -35,29 +35,6 @@ int main(int argc, const char **argv) {
   auto service = shortfin::cpp::MobileNetService();
   service.RunMain(readImageBinary(fs::path(image_bin_path)), filepath,
                   irpa_path);
-
-  // auto mobileNetDriver = shortfin::cpp::MobileNetService();
-  // mobileNetDriver.Run(readImageBinary(fs::path(image_bin_path)), filepath,
-  //                     irpa_path);
-  // auto device_arr = shortfin::array::device_array::for_device(
-  //     mobileNetDriver.device(), std::to_array<size_t>({1, 3, 224, 224}),
-  //     shortfin::array::DType::float32());
-
-  // auto host_arr = device_arr.for_transfer();
-  // auto image_bin = readImageBinary(fs::path(image_bin_path));
-
-  // {
-  //   auto map = host_arr.typed_data_w<float>();
-  //   std::copy(image_bin.begin(), image_bin.end(), map.begin());
-  // }
-
-  // device_arr.copy_from(host_arr);
-
-  // int count = 0;
-  // while (count < 2000) {
-  //   mobileNetDriver.loadMobileNetProgram(filepath, irpa_path);
-  //   count++;
-  // }
 
   return 0;
 }

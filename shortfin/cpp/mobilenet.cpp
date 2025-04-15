@@ -1,6 +1,7 @@
 #include "mobilenet.h"
 
 #include <filesystem>
+#include <fstream>
 #include <future>
 #include <memory>
 #include <stdexcept>
@@ -24,6 +25,15 @@
 namespace fs = std::filesystem;
 
 namespace shortfin::cpp {
+
+void WriteBufferToDisk(unsigned char *buffer, const char *path, size_t size) {
+  float *data = reinterpret_cast<float *>(buffer);
+  std::ofstream out(fs::path(path), std::ios::out | std::ios::binary);
+
+  out.write((const char *)buffer, size);
+  out.flush();
+  out.close();
+}
 
 ////////////////////////////////////////
 /// Buffer Object
@@ -171,10 +181,7 @@ void MobileNetService::Run(std::vector<float> input_data, const char *filepath,
   future2.wait();
 
   if (future.get() && future2.get()) {
-    std::cerr << "DONE" << std::endl;
     exec_proc.Terminate();
-  } else {
-    std::cerr << "STILL NOT DONE" << std::endl;
   }
 
   auto completion_event = exec_proc.OnTermination();
@@ -200,8 +207,8 @@ void MobileNetService::Run(std::vector<float> input_data, const char *filepath,
                                                     array::DType::float32());
   output_array.copy_from(arr);
 
-  data_ = output_array.data().data();
-  data_len_ = output_array.data().size();
+  WriteBufferToDisk(output_array.data().data(), "sfin_mobilenet_output.bin",
+                    output_array.data().size());
 
   std::cerr << output_array.contents_to_s().value() << std::endl;
   auto worker = local::Worker::GetCurrent();

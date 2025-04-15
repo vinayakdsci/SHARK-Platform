@@ -96,13 +96,11 @@ class InferenceExecProcess : public local::detail::BaseProcess {
   void ScheduleOnWorker() override {
     // TODO(vinayakdsci): The result of this process could be carrying
     // and exception. Handle that here.
-    std::cerr << "Before" << std::endl;
     local::Worker::Options options(iree_allocator_system(), "internal_pump");
     auto &internal_pump = fiber()->system().CreateWorker(options);
     internal_pump.CallThreadsafe(
         std::bind(&InferenceExecProcess::RunInference, this));
     internal_pump.WaitForShutdown();
-    std::cerr << "After" << std::endl;
   }
 
   local::VoidFuture &done() { return *done_; }
