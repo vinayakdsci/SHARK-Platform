@@ -32,9 +32,9 @@ int main(int argc, const char **argv) {
   const char *filepath = argv[1];
   const char *irpa_path = argv[2];
   const char *image_bin_path = argv[3];
-
-  shortfin::cpp::mobilenet::Run(readImageBinary(fs::path(image_bin_path)),
-                                filepath, irpa_path);
+  auto service = shortfin::cpp::MobileNetService();
+  service.RunMain(readImageBinary(fs::path(image_bin_path)), filepath,
+                  irpa_path);
 
   // auto mobileNetDriver = shortfin::cpp::MobileNetService();
   // mobileNetDriver.Run(readImageBinary(fs::path(image_bin_path)), filepath,

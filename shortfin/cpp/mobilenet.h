@@ -99,13 +99,6 @@ class InferenceExecProcess : public local::detail::BaseProcess {
     std::cerr << "Before" << std::endl;
     local::Worker::Options options(iree_allocator_system(), "internal_pump");
     auto &internal_pump = fiber()->system().CreateWorker(options);
-    // internal_pump.CallLowLevel(
-    //     [](void *d, iree_loop_t, iree_status_t) noexcept -> iree_status_t {
-    //       InferenceExecProcess::RunInference((InferenceExecProcess *)d);
-    //       return iree_ok_status();
-    //     },
-    //     this);
-    // internal_pump.RunOnCurrentThread();
     internal_pump.CallThreadsafe(
         std::bind(&InferenceExecProcess::RunInference, this));
     internal_pump.WaitForShutdown();
@@ -126,9 +119,14 @@ class InferenceExecProcess : public local::detail::BaseProcess {
 
 class MobileNetService {
  public:
-  MobileNetService(local::Fiber &fiber, local::Worker &worker,
-                   array::device_array *output);
-  ~MobileNetService() {}
+  MobileNetService() { InitializeService(); }
+  ~MobileNetService() {
+    system_->Shutdown();
+    system_.reset();
+  }
+
+  void RunMain(std::vector<float> input_data, const char *filepath,
+               const char *parampath);
 
   local::Program loadMobileNetProgram(const char *filepath,
                                       const char *param_path);
@@ -137,18 +135,19 @@ class MobileNetService {
 
   local::Fiber &fiber() { return *fiber_; }
 
+  void InitializeService();
+
   void Run(std::vector<float> input_data, const char *filepath,
-           const char *param_path, bool &done, std::condition_variable &cvar,
-           std::mutex &mutex);
+           const char *param_path);
 
  private:
   local::ProgramModule loadProgramModule(const char *path);
   local::SystemPtr system_;
   std::shared_ptr<local::Fiber> fiber_;
   local::ScopedDevice device_;
-  local::StaticProgramParameters model_params_;
   local::QueuePtr queue_;
-  array::device_array *output_;
+  void *data_;
+  size_t data_len_;
 };
 
 }  // namespace shortfin::cpp
