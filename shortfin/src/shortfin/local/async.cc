@@ -6,7 +6,10 @@
 
 #include "shortfin/local/async.h"
 
+#include <condition_variable>
+
 #include "shortfin/local/worker.h"
+#include "shortfin/support/iree_concurrency.h"
 #include "shortfin/support/logging.h"
 
 namespace shortfin::local {
@@ -122,6 +125,30 @@ void Future::AddCallback(FutureCallback callback) {
   if (state_->done_ && was_empty) {
     IssueCallbacksWithLockHeld();
   }
+}
+
+void Future::Wait() {
+  std::condition_variable cv;
+  std::mutex mutex;
+  bool finished = false;
+
+  {
+    // Do not create a wait callback if the future is already
+    // finished.
+    iree::slim_mutex_lock_guard lock(state_->lock_);
+    if (state_->done_) {
+      return;
+    }
+  }
+
+  AddCallback([&](Future &future) {
+    std::lock_guard<std::mutex> lock(mutex);
+    finished = true;
+    cv.notify_one();
+  });
+
+  std::unique_lock<std::mutex> lock(mutex);
+  cv.wait(lock, [&] { return finished; });
 }
 
 iree_status_t Future::RawHandleWorkerCallback(void *state_vp, iree_loop_t loop,
