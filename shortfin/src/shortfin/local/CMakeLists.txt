@@ -42,3 +42,9 @@ shortfin_cc_component(
     iree_vm_vm
     iree_vm_bytecode_module
 )
+
+shortfin_gtest_test(
+  NAME shortfin_async_test
+  SRCS
+    async_test.cc
+)
