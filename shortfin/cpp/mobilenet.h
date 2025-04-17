@@ -96,11 +96,11 @@ class InferenceExecProcess : public local::detail::BaseProcess {
   void ScheduleOnWorker() override {
     // TODO(vinayakdsci): The result of this process could be carrying
     // and exception. Handle that here.
-    local::Worker::Options options(iree_allocator_system(), "internal_pump");
-    auto &internal_pump = fiber()->system().CreateWorker(options);
-    internal_pump.CallThreadsafe(
+    // local::Worker::Options options(iree_allocator_system(), "internal_pump");
+    // auto &internal_pump = fiber()->system().CreateWorker(options);
+    fiber()->worker().CallThreadsafe(
         std::bind(&InferenceExecProcess::RunInference, this));
-    internal_pump.WaitForShutdown();
+    // internal_pump.WaitForShutdown();
   }
 
   local::VoidFuture &done() { return *done_; }
@@ -135,8 +135,8 @@ class MobileNetService {
 
   void InitializeService();
 
-  void Run(std::vector<float> input_data, const char *filepath,
-           const char *param_path);
+  local::Promise<void> Run(std::vector<float> input_data, const char *filepath,
+                           const char *param_path);
 
  private:
   local::ProgramModule loadProgramModule(const char *path);

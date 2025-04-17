@@ -1,5 +1,6 @@
 #include "mobilenet.h"
 
+#include <coroutine>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -33,6 +34,27 @@ void WriteBufferToDisk(unsigned char *buffer, const char *path, size_t size) {
   out.write((const char *)buffer, size);
   out.flush();
   out.close();
+}
+std::variant<array::device_array, array::storage> GetResultFromInvocationRef(
+    local::ProgramInvocation::Ptr &invocation, ::iree::vm::opaque_ref ref,
+    local::CoarseInvocationTimelineImporter *timeline_importer) {
+  auto type = ref.get()->type;
+  if (local::ProgramInvocationMarshalableFactory::invocation_marshalable_type<
+          array::device_array>() == type) {
+    return local::ProgramInvocationMarshalableFactory::
+        CreateFromInvocationResultRef<array::device_array>(
+            invocation.get(), timeline_importer, std::move(ref));
+  } else if (local::ProgramInvocationMarshalableFactory::
+                 invocation_marshalable_type<array::storage>() == type) {
+    // storage
+    return local::ProgramInvocationMarshalableFactory::
+        CreateFromInvocationResultRef<array::storage>(
+            invocation.get(), timeline_importer, std::move(ref));
+  }
+
+  throw std::invalid_argument(
+      fmt::format("Could not marshal ref type {}",
+                  to_string_view(iree_vm_ref_type_name(type))));
 }
 
 ////////////////////////////////////////
@@ -81,31 +103,8 @@ void InferenceExecProcess::RunInference(InferenceExecProcess *process) {
   auto fut = process->fiber()->device(0).OnSync();
   auto &invocation_ptr = result_fut;
   process->invocation_ptr_ = invocation_ptr;
-  auto Worker = local::Worker::GetCurrent();
-  Worker->Kill();
-}
-
-std::variant<array::device_array, array::storage>
-InferenceExecProcess::GetResultFromInvocationRef(
-    local::ProgramInvocation::Ptr &invocation, ::iree::vm::opaque_ref ref,
-    local::CoarseInvocationTimelineImporter *timeline_importer) {
-  auto type = ref.get()->type;
-  if (local::ProgramInvocationMarshalableFactory::invocation_marshalable_type<
-          array::device_array>() == type) {
-    return local::ProgramInvocationMarshalableFactory::
-        CreateFromInvocationResultRef<array::device_array>(
-            invocation.get(), timeline_importer, std::move(ref));
-  } else if (local::ProgramInvocationMarshalableFactory::
-                 invocation_marshalable_type<array::storage>() == type) {
-    // storage
-    return local::ProgramInvocationMarshalableFactory::
-        CreateFromInvocationResultRef<array::storage>(
-            invocation.get(), timeline_importer, std::move(ref));
-  }
-
-  throw std::invalid_argument(
-      fmt::format("Could not marshal ref type {}",
-                  to_string_view(iree_vm_ref_type_name(type))));
+  // auto Worker = local::Worker::GetCurrent();
+  // Worker->Kill();
 }
 
 ////////////////////////////////////////
@@ -122,11 +121,13 @@ void MobileNetService::InitializeService() {
 
 void MobileNetService::RunMain(std::vector<float> input_data,
                                const char *filepath, const char *parampath) {
-  local::Worker::Options options(iree_allocator_system(), "pump_runner_tmp");
-  auto &worker = system_->CreateWorker(options);
-  worker.CallThreadsafe([&]() { this->Run(input_data, filepath, parampath); });
+  // local::Worker::Options options(iree_allocator_system(), "pump_runner_tmp");
+  // auto &worker = system_->CreateWorker(options);
+  fiber_->worker().CallThreadsafe([this, input_data, filepath, parampath]() {
+    auto coro = this->Run(input_data, filepath, parampath);
+  });
   // worker.RunOnCurrentThread();
-  worker.WaitForShutdown();
+  fiber_->worker().WaitForShutdown();
 }
 
 local::ProgramModule MobileNetService::loadProgramModule(const char *path) {
@@ -144,75 +145,76 @@ struct Data {
   const char *ip;
 };
 
-void MobileNetService::Run(std::vector<float> input_data, const char *filepath,
-                           const char *param_path) {
-  // TODO(vinayakdsci): Move device array creation to InferenceRequest
-  auto dims = std::array<size_t, 4>{1, 3, 224, 224};
-  auto input_bo = MobileNetBufferObject(std::span<size_t>{dims}, device_);
+local::Promise<void> MobileNetService::Run(std::vector<float> input_data,
+                                           const char *filepath,
+                                           const char *param_path) {
+  std::cerr << "AT THE START\n" << std::endl << std::flush;
+  /*   // TODO(vinayakdsci): Move device array creation to InferenceRequest
+    auto dims = std::array<size_t, 4>{1, 3, 224, 224};
+    auto input_bo = MobileNetBufferObject(std::span<size_t>{dims}, device_);
 
-  input_bo.fillBufferAndTransferToDevice(input_data);
+    input_bo.fillBufferAndTransferToDevice(input_data);
 
-  InferenceRequest req = InferenceRequest(std::move(input_bo));
-  local::Program program = loadMobileNetProgram(filepath, param_path);
+    InferenceRequest req = InferenceRequest(std::move(input_bo));
+    local::Program program = loadMobileNetProgram(filepath, param_path);
 
-  InferenceExecProcess exec_proc = InferenceExecProcess(fiber_, &program);
+    auto prog_function = program.LookupFunction("module.main_graph");
 
-  exec_proc.attachInferenceRequest(&req);
-  exec_proc.Launch();
-  auto nfut = exec_proc.fiber()->device(0).OnSync();
-
-  nfut.AddCallback([&](local::Future &future) {
-    std::cerr << "Terminating process" << std::endl;
-  });
-
-  std::future<bool> future = std::async(std::launch::async, [&] {
-    while (!nfut.is_done()) {
+    if (!prog_function.has_value()) {
+      std::cerr
+          << "Failed to lookup function: VM function 'main_graph' not found\n";
+      exit(1);
     }
-    return nfut.is_done();
-  });
+    auto invocation = prog_function->CreateInvocation(
+        fiber().shared_from_this(), local::ProgramIsolation::PER_FIBER);
+    auto &device_arr = input_bo.device_array();
 
-  std::future<bool> future2 = std::async(std::launch::async, [&] {
-    while (!exec_proc.future().is_done()) {
-    }
-    return exec_proc.future().is_done();
-  });
+    device_arr.AddAsInvocationArgument(invocation.get(),
+                                       local::ProgramResourceBarrier::DEFAULT);
 
-  future.wait();
-  future2.wait();
+    // auto result_fut = local::makePromise<local::ProgramInvocation::Ptr>(
+    auto result_fut = local::ProgramInvocation::Invoke(std::move(invocation));
+    // InferenceExecProcess exec_proc = InferenceExecProcess(fiber_, &program);
 
-  if (future.get() && future2.get()) {
-    exec_proc.Terminate();
-  }
+    // exec_proc.attachInferenceRequest(&req);
+    // exec_proc.Launch();
 
-  auto completion_event = exec_proc.OnTermination();
-  completion_event.BlockingWait(iree_infinite_timeout());
+    co_await result_fut;
 
-  local::CoarseInvocationTimelineImporter::Options options;
-  options.assume_no_alias = true;
+    std::cerr << "IT HAPPENED!\n" << std::endl;
 
-  auto &invocation_ptr = exec_proc.future().result();
-  local::CoarseInvocationTimelineImporter timeline_importer(
-      invocation_ptr.get(), options);
-  ::iree::vm::opaque_ref ref = invocation_ptr->result_ref(0);
-  if (!ref) {
-    throw std::logic_error("Program returned NULL ref\n");
-  }
+    // auto nfut = device_.OnSync();
+    // co_await nfut;
 
-  auto arr = std::get<array::device_array>(exec_proc.GetResultFromInvocationRef(
-      invocation_ptr, std::move(ref), &timeline_importer));
+    // local::CoarseInvocationTimelineImporter::Options options;
+    // options.assume_no_alias = true;
 
-  auto output_dims_arr = std::array<size_t, 2>{1, 1000};
-  auto output_dims = std::span<size_t>{output_dims_arr};
-  auto output_array = array::device_array::for_host(device_, output_dims,
-                                                    array::DType::float32());
-  output_array.copy_from(arr);
+    // // auto &invocation_ptr = result.result();
+    // local::CoarseInvocationTimelineImporter timeline_importer(
+    //     (invocation_ptr).get(), options);
+    // ::iree::vm::opaque_ref ref = (invocation_ptr)->result_ref(0);
+    // if (!ref) {
+    //   throw std::logic_error("Program returned NULL ref\n");
+    // }
 
-  WriteBufferToDisk(output_array.data().data(), "sfin_mobilenet_output.bin",
-                    output_array.data().size());
+    // auto arr = std::get<array::device_array>(GetResultFromInvocationRef(
+    //     invocation_ptr, std::move(ref), &timeline_importer));
 
-  std::cerr << output_array.contents_to_s().value() << std::endl;
+    // auto output_dims_arr = std::array<size_t, 2>{1, 1000};
+    // auto output_dims = std::span<size_t>{output_dims_arr};
+    // auto output_array = array::device_array::for_host(device_, output_dims,
+    // array::DType::float32());
+    // output_array.copy_from(arr);
+
+    // WriteBufferToDisk(output_array.data().data(),
+    // "sfin_mobilenet_output.bin",
+    //                   output_array.data().size());
+
+    // std::cerr << output_array.contents_to_s().value() << std::endl;
+    // */
   auto worker = local::Worker::GetCurrent();
   worker->Kill();
+  co_await std::suspend_never{};
 }
 
 local::Program MobileNetService::loadMobileNetProgram(const char *filepath,
