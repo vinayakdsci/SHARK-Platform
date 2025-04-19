@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <iostream>
 #include <memory>
 #include <stdexcept>
 
@@ -123,10 +124,22 @@ void MobileNetService::RunMain(std::vector<float> input_data,
                                const char *filepath, const char *parampath) {
   // local::Worker::Options options(iree_allocator_system(), "pump_runner_tmp");
   // auto &worker = system_->CreateWorker(options);
-  fiber_->worker().CallThreadsafe([this, input_data, filepath, parampath]() {
-    auto coro = this->Run(input_data, filepath, parampath);
+
+  // This code should be moved to a new method fiber_->run_async(this->Run(...))
+  std::cerr << "RUNNING CORO" << std::endl;
+  auto coro = this->Run(input_data, filepath, parampath);
+  fiber_->worker().CallThreadsafe([this, &coro, input_data, filepath, parampath]() {
+    coro.resume();
   });
+  std::cerr << "WAITING FOR CORO" << std::endl;
+  coro.wait();
+
+  
   // worker.RunOnCurrentThread();
+  std::cerr << "KILLING WORKER" << std::endl;
+  fiber_->worker().Kill();
+  // fiber_->worker().CallThreadsafe([this]() { fiber_->worker().Kill(); });
+  std::cerr << "WAITING FOR SHUTDOWN" << std::endl;
   fiber_->worker().WaitForShutdown();
 }
 
@@ -182,9 +195,10 @@ local::Promise<void> MobileNetService::Run(std::vector<float> input_data,
     co_await result_fut;
 
     std::cerr << "IT HAPPENED!\n" << std::endl;
-
-    // auto nfut = device_.OnSync();
-    // co_await nfut;
+*/
+    std::cerr << "DEVICE SYNC" << std::endl;
+    auto nfut = device_.OnSync();
+    co_await nfut;
 
     // local::CoarseInvocationTimelineImporter::Options options;
     // options.assume_no_alias = true;
@@ -212,9 +226,10 @@ local::Promise<void> MobileNetService::Run(std::vector<float> input_data,
 
     // std::cerr << output_array.contents_to_s().value() << std::endl;
     // */
-  auto worker = local::Worker::GetCurrent();
-  worker->Kill();
-  co_await std::suspend_never{};
+  // auto worker = local::Worker::GetCurrent();
+  // worker->Kill();
+  // co_await std::suspend_never{};
+  std::cerr << "AT THE END\n" << std::endl;
 }
 
 local::Program MobileNetService::loadMobileNetProgram(const char *filepath,
