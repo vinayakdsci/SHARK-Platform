@@ -126,21 +126,22 @@ void MobileNetService::RunMain(std::vector<float> input_data,
   // auto &worker = system_->CreateWorker(options);
 
   // This code should be moved to a new method fiber_->run_async(this->Run(...))
-  std::cerr << "RUNNING CORO" << std::endl;
+  std::cerr << "RunMain: RUNNING CORO" << std::endl;
   auto coro = this->Run(input_data, filepath, parampath);
   fiber_->worker().CallThreadsafe([this, &coro, input_data, filepath, parampath]() {
     coro.resume();
   });
-  std::cerr << "WAITING FOR CORO" << std::endl;
+  std::cerr << "RunMain: WAITING FOR CORO" << std::endl;
   coro.wait();
+  std::cerr << "RunMain: CORO COMPLETE" << std::endl;
 
-  
   // worker.RunOnCurrentThread();
-  std::cerr << "KILLING WORKER" << std::endl;
+  std::cerr << "RunMain: KILLING WORKER" << std::endl;
   fiber_->worker().Kill();
   // fiber_->worker().CallThreadsafe([this]() { fiber_->worker().Kill(); });
-  std::cerr << "WAITING FOR SHUTDOWN" << std::endl;
+  std::cerr << "RunMain: WAITING FOR SHUTDOWN" << std::endl;
   fiber_->worker().WaitForShutdown();
+  std::cerr << "RunMain: SHUTDOWN COMPLETE" << std::endl;
 }
 
 local::ProgramModule MobileNetService::loadProgramModule(const char *path) {
@@ -161,42 +162,42 @@ struct Data {
 local::Promise<void> MobileNetService::Run(std::vector<float> input_data,
                                            const char *filepath,
                                            const char *param_path) {
-  std::cerr << "AT THE START\n" << std::endl << std::flush;
-  /*   // TODO(vinayakdsci): Move device array creation to InferenceRequest
-    auto dims = std::array<size_t, 4>{1, 3, 224, 224};
-    auto input_bo = MobileNetBufferObject(std::span<size_t>{dims}, device_);
+  std::cerr << "Service coro: AT THE START\n" << std::endl << std::flush;
+    // TODO(vinayakdsci): Move device array creation to InferenceRequest
+    // auto dims = std::array<size_t, 4>{1, 3, 224, 224};
+    // auto input_bo = MobileNetBufferObject(std::span<size_t>{dims}, device_);
 
-    input_bo.fillBufferAndTransferToDevice(input_data);
+    // input_bo.fillBufferAndTransferToDevice(input_data);
 
-    InferenceRequest req = InferenceRequest(std::move(input_bo));
-    local::Program program = loadMobileNetProgram(filepath, param_path);
+    // InferenceRequest req = InferenceRequest(std::move(input_bo));
+    // local::Program program = loadMobileNetProgram(filepath, param_path);
 
-    auto prog_function = program.LookupFunction("module.main_graph");
+    // auto prog_function = program.LookupFunction("module.main_graph");
 
-    if (!prog_function.has_value()) {
-      std::cerr
-          << "Failed to lookup function: VM function 'main_graph' not found\n";
-      exit(1);
-    }
-    auto invocation = prog_function->CreateInvocation(
-        fiber().shared_from_this(), local::ProgramIsolation::PER_FIBER);
-    auto &device_arr = input_bo.device_array();
+    // if (!prog_function.has_value()) {
+    //   std::cerr
+    //       << "Failed to lookup function: VM function 'main_graph' not found\n";
+    //   exit(1);
+    // }
+    // auto invocation = prog_function->CreateInvocation(
+    //     fiber().shared_from_this(), local::ProgramIsolation::PER_FIBER);
+    // auto &device_arr = input_bo.device_array();
 
-    device_arr.AddAsInvocationArgument(invocation.get(),
-                                       local::ProgramResourceBarrier::DEFAULT);
+    // device_arr.AddAsInvocationArgument(invocation.get(),
+    //                                    local::ProgramResourceBarrier::DEFAULT);
 
-    // auto result_fut = local::makePromise<local::ProgramInvocation::Ptr>(
-    auto result_fut = local::ProgramInvocation::Invoke(std::move(invocation));
-    // InferenceExecProcess exec_proc = InferenceExecProcess(fiber_, &program);
+    // // auto result_fut = local::makePromise<local::ProgramInvocation::Ptr>(
+    // auto result_fut = local::ProgramInvocation::Invoke(std::move(invocation));
+    // // InferenceExecProcess exec_proc = InferenceExecProcess(fiber_, &program);
 
-    // exec_proc.attachInferenceRequest(&req);
-    // exec_proc.Launch();
+    // // exec_proc.attachInferenceRequest(&req);
+    // // exec_proc.Launch();
 
-    co_await result_fut;
+    // co_await result_fut;
 
-    std::cerr << "IT HAPPENED!\n" << std::endl;
-*/
-    std::cerr << "DEVICE SYNC" << std::endl;
+    // std::cerr << "IT HAPPENED!\n" << std::endl;
+
+    std::cerr << "Service coro: DEVICE SYNC" << std::endl;
     auto nfut = device_.OnSync();
     co_await nfut;
 
@@ -229,7 +230,7 @@ local::Promise<void> MobileNetService::Run(std::vector<float> input_data,
   // auto worker = local::Worker::GetCurrent();
   // worker->Kill();
   // co_await std::suspend_never{};
-  std::cerr << "AT THE END\n" << std::endl;
+  std::cerr << "Service coro: AT THE END\n" << std::endl;
 }
 
 local::Program MobileNetService::loadMobileNetProgram(const char *filepath,
